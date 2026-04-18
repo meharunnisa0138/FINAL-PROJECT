@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Karnataka Crop Yield Prediction System</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --earth-900: #1a1208;
+    --earth-800: #2d1f0a;
+    --earth-700: #3d2b0e;
+    --soil-brown: #6b4226;
+    --clay: #8b5e3c;
+    --amber: #c8821a;
+    --gold: #e6a020;
+    --harvest: #f0c040;
+    --leaf-dark: #1e4d2b;
+    --leaf: #2d6e3e;
+    --leaf-mid: #3d8b52;
+    --leaf-light: #5aad70;
+    --sage: #7ec99a;
+    --cream: #faf6ed;
+    --parchment: #f0e8d0;
+    --light-amber: #fef3db;
+    --white: #ffffff;
+    --risk-low: #22c55e;
+    --risk-med: #f59e0b;
+    --risk-high: #ef4444;
+    --shadow-warm: rgba(100, 60, 20, 0.15);
+    --shadow-deep: rgba(20, 10, 2, 0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--earth-900);
+    color: var(--cream);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  /* Hero header */
+  .hero {
+    position: relative;
+    padding: 60px 24px 50px;
+    text-align: center;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--earth-800) 0%, var(--earth-900) 100%);
+    border-bottom: 1px solid rgba(200, 130, 26, 0.2);
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -60%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 500px;
+    background: radial-gradient(ellipse, rgba(46, 110, 62, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  }
+
+  .badge-tag {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--gold);
+    background: rgba(200, 130, 26, 0.12);
+    border: 1px solid rgba(200, 130, 26, 0.3);
+    padding: 5px 14px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+  }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 5vw, 3.8rem);
+    font-weight: 900;
+    line-height: 1.1;
+    color: var(--cream);
+    letter-spacing: -0.02em;
+    max-width: 700px;
+    margin: 0 auto 14px;
+  }
+
+  .hero h1 span {
+    color: var(--gold);
+    font-style: italic;
+  }
+
+  .hero p {
+    color: rgba(250, 246, 237, 0.55);
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+  }
+
+  .hero-icons {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 24px;
+    opacity: 0.5;
+  }
+
+  .hero-icons span {
+    font-size: 22px;
+    filter: grayscale(30%);
+  }
+
+  /* Main layout */
+  .main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* Card style */
+  .card {
+    background: rgba(250, 246, 237, 0.04);
+    border: 1px solid rgba(200, 130, 26, 0.15);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 24px;
+    backdrop-filter: blur(4px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(200, 130, 26, 0.3), transparent);
+  }
+
+  .card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card-title .icon {
+    width: 32px; height: 32px;
+    background: rgba(200, 130, 26, 0.15);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  /* Form grid */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  @media (max-width: 600px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .card { padding: 20px; }
+    .hero { padding: 40px 16px 36px; }
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .form-group.full { grid-column: 1 / -1; }
+
+  label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(250, 246, 237, 0.5);
+  }
+
+  label .req { color: var(--amber); margin-left: 3px; }
+  label .opt { color: rgba(250, 246, 237, 0.3); font-size: 11px; text-transform: none; letter-spacing: 0; margin-left: 4px; font-weight: 400; }
+
+  select, input[type="number"], input[type="text"] {
+    background: rgba(250, 246, 237, 0.05);
+    border: 1px solid rgba(200, 130, 26, 0.2);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: var(--cream);
+    outline: none;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+  }
+
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23c8821a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+  }
+
+  select option {
+    background: #2d1f0a;
+    color: var(--cream);
+  }
+
+  select:focus, input:focus {
+    border-color: var(--amber);
+    background: rgba(200, 130, 26, 0.08);
+    box-shadow: 0 0 0 3px rgba(200, 130, 26, 0.12);
+  }
+
+  select:hover, input:hover {
+    border-color: rgba(200, 130, 26, 0.4);
+  }
+
+  input::placeholder { color: rgba(250, 246, 237, 0.25); }
+
+  /* Input row with inline fields */
+  .inline-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  /* Submit button */
+  .btn-predict {
+    width: 100%;
+    padding: 16px 28px;
+    background: linear-gradient(135deg, var(--leaf) 0%, var(--leaf-dark) 100%);
+    border: 1px solid rgba(93, 173, 112, 0.3);
+    border-radius: 12px;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .btn-predict::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--leaf-mid), var(--leaf));
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .btn-predict:hover::before { opacity: 1; }
+  .btn-predict:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(45, 110, 62, 0.3); }
+  .btn-predict:active { transform: translateY(0); }
+
+  .btn-predict span { position: relative; z-index: 1; }
+
+  /* Loading */
+  .loading-overlay {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 0;
+    gap: 20px;
+  }
+
+  .loading-overlay.active { display: flex; }
+
+  .loader-ring {
+    width: 56px; height: 56px;
+    border: 3px solid rgba(200, 130, 26, 0.15);
+    border-top-color: var(--amber);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--amber);
+    letter-spacing: 0.1em;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+  .loading-sub {
+    font-size: 12px;
+    color: rgba(250, 246, 237, 0.35);
+  }
+
+  /* Results */
+  #results-section {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+
+  #results-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Input summary */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .summary-item {
+    background: rgba(200, 130, 26, 0.06);
+    border: 1px solid rgba(200, 130, 26, 0.12);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+
+  .summary-item .s-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(250, 246, 237, 0.35);
+    margin-bottom: 4px;
+  }
+
+  .summary-item .s-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--cream);
+  }
+
+  /* Yield forecast */
+  .yield-main {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 20px 0 8px;
+  }
+
+  .yield-number {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 900;
+    color: var(--harvest);
+    line-height: 1;
+  }
+
+  .yield-unit {
+    font-size: 14px;
+    color: rgba(250, 246, 237, 0.5);
+    margin-bottom: 8px;
+    font-weight: 300;
+  }
+
+  .yield-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: rgba(250, 246, 237, 0.6);
+    margin-bottom: 16px;
+  }
+
+  .yield-range span {
+    color: var(--sage);
+  }
+
+  /* Risk badge */
+  .risk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 16px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid;
+    margin-bottom: 20px;
+  }
+
+  .risk-badge::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .risk-low {
+    color: var(--risk-low);
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.25);
+  }
+
+  .risk-medium {
+    color: var(--risk-med);
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.25);
+  }
+
+  .risk-high {
+    color: var(--risk-high);
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+
+  /* Confidence bar */
+  .conf-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+
+  .conf-label {
+    font-size: 12px;
+    color: rgba(250, 246, 237, 0.45);
+    min-width: 120px;
+  }
+
+  .conf-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(250, 246, 237, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .conf-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 0;
+  }
+
+  .fill-low { background: linear-gradient(90deg, var(--leaf), var(--risk-low)); }
+  .fill-medium { background: linear-gradient(90deg, var(--amber), var(--risk-med)); }
+  .fill-high { background: linear-gradient(90deg, var(--soil-brown), var(--risk-high)); }
+
+  .conf-pct {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(200, 130, 26, 0.1);
+  }
+
+  .stat-box {
+    background: rgba(46, 110, 62, 0.07);
+    border: 1px solid rgba(46, 110, 62, 0.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .stat-box .s-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(250,246,237,0.4); margin-bottom: 6px; font-weight: 600; }
+  .stat-box .s-val { font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 700; color: var(--sage); }
+  .stat-box .s-sub { font-size: 12px; color: rgba(250,246,237,0.35); margin-top: 2px; }
+
+  /* Divider */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 8px 0 24px;
+  }
+
+  .section-divider .line { flex: 1; height: 1px; background: rgba(200, 130, 26, 0.12); }
+  .section-divider .text { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(250, 246, 237, 0.25); white-space: nowrap; }
+
+  /* Excellent card */
+  .excellent-card {
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 14px;
+    padding: 28px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .excellent-icon {
+    font-size: 40px;
+    flex-shrink: 0;
+  }
+
+  .excellent-text h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    color: var(--risk-low);
+    margin-bottom: 6px;
+  }
+
+  .excellent-text p {
+    font-size: 14px;
+    color: rgba(250, 246, 237, 0.55);
+    line-height: 1.6;
+  }
+
+  /* Optimization section */
+  .opt-why {
+    background: rgba(239, 68, 68, 0.04);
+    border-left: 3px solid rgba(239, 68, 68, 0.4);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+
+  .opt-why.med {
+    background: rgba(245, 158, 11, 0.04);
+    border-left-color: rgba(245, 158, 11, 0.4);
+  }
+
+  .opt-why h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--risk-med);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .opt-why.high-risk h4 { color: var(--risk-high); }
+
+  .opt-why ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .opt-why li {
+    font-size: 13px;
+    color: rgba(250, 246, 237, 0.6);
+    padding-left: 16px;
+    position: relative;
+  }
+
+  .opt-why li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--amber);
+  }
+
+  /* Opt-in button */
+  .btn-opt {
+    padding: 13px 24px;
+    background: rgba(200, 130, 26, 0.1);
+    border: 1px solid rgba(200, 130, 26, 0.3);
+    border-radius: 10px;
+    color: var(--gold);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+
+  .btn-opt:hover {
+    background: rgba(200, 130, 26, 0.2);
+    border-color: var(--amber);
+  }
+
+  /* Optimization results */
+  #opt-results { display: none; }
+  #opt-results.visible { display: block; }
+
+  .opt-top3 {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .opt-card {
+    background: rgba(250, 246, 237, 0.04);
+    border: 1px solid rgba(200, 130, 26, 0.15);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    opacity: 0;
+    transform: translateX(-12px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+
+  .opt-card.show { opacity: 1; transform: translateX(0); }
+
+  .opt-rank {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--amber), var(--gold));
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--earth-800);
+    flex-shrink: 0;
+  }
+
+  .opt-info { flex: 1; }
+
+  .opt-type {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+
+  .type-Irrigation { color: #60a5fa; }
+  .type-Sowing { color: #a78bfa; }
+  .type-Month { color: #a78bfa; }
+  .type-pH { color: var(--sage); }
+  .type-Soil { color: var(--sage); }
+  .type-Crop { color: var(--harvest); }
+
+  .opt-change {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--cream);
+    margin-bottom: 2px;
+  }
+
+  .opt-yield {
+    font-size: 12px;
+    color: rgba(250, 246, 237, 0.45);
+  }
+
+  .opt-gain {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .gain-pct {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--sage);
+  }
+
+  .gain-label {
+    font-size: 11px;
+    color: rgba(250, 246, 237, 0.3);
+  }
+
+  /* Combined best */
+  .combined-card {
+    background: linear-gradient(135deg, rgba(46, 110, 62, 0.1), rgba(200, 130, 26, 0.06));
+    border: 1px solid rgba(46, 110, 62, 0.25);
+    border-radius: 14px;
+    padding: 24px 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .combined-card::before {
+    content: 'BEST COMBINATION';
+    position: absolute;
+    top: 16px; right: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: rgba(90, 173, 112, 0.5);
+  }
+
+  .combined-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--sage);
+    margin-bottom: 16px;
+  }
+
+  .combined-params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .param-chip {
+    background: rgba(250, 246, 237, 0.06);
+    border: 1px solid rgba(250, 246, 237, 0.1);
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 12px;
+  }
+
+  .param-chip .p-k { color: rgba(250, 246, 237, 0.35); margin-right: 4px; font-size: 11px; }
+  .param-chip .p-v { color: var(--cream); }
+
+  .combined-yield {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(46, 110, 62, 0.15);
+  }
+
+  .combined-yield .big {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.5rem;
+    font-weight: 900;
+    color: var(--harvest);
+    line-height: 1;
+  }
+
+  .combined-yield .details {
+    font-size: 13px;
+    color: rgba(250, 246, 237, 0.45);
+    line-height: 1.5;
+  }
+
+  .combined-yield .gain-text {
+    color: var(--sage);
+    font-weight: 600;
+  }
+
+  /* Sections header */
+  .section-head {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: rgba(250, 246, 237, 0.7);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-head::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(200, 130, 26, 0.1);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 32px 24px;
+    border-top: 1px solid rgba(200, 130, 26, 0.1);
+    font-size: 12px;
+    color: rgba(250, 246, 237, 0.2);
+    letter-spacing: 0.05em;
+  }
+
+  .footer strong { color: rgba(200, 130, 26, 0.4); }
+
+  /* Animate in */
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .anim-in { animation: fadeSlideIn 0.5s ease forwards; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="badge-tag">FTTransformer · PyTorch · Karnataka Agriculture</div>
+  <h1>Karnataka Crop Yield<br><span>Prediction System</span></h1>
+  <p>AI-powered quantile forecasting with optimization engine for Karnataka's 30 districts</p>
+  <div class="hero-icons">
+    <span>🌾</span><span>🌧️</span><span>🌱</span><span>🌡️</span><span>💧</span><span>🧪</span>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- INPUT FORM -->
+  <div class="card" id="form-card">
+    <div class="card-title">
+      <div class="icon">📋</div>
+      Farm Parameters
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label>District <span class="req">*</span></label>
+        <select id="district">
+          <option value="">Select district…</option>
+          <option>Bagalkot</option><option>Ballari</option><option>Belagavi</option>
+          <option>Bengaluru Rural</option><option>Bengaluru Urban</option><option>Bidar</option>
+          <option>Chamarajanagar</option><option>Chikkaballapur</option><option>Chikkamagaluru</option>
+          <option>Chitradurga</option><option>Dakshina Kannada</option><option>Davangere</option>
+          <option>Dharwad</option><option>Gadag</option><option>Hassan</option>
+          <option>Haveri</option><option>Kalaburagi</option><option>Kodagu</option>
+          <option>Kolar</option><option>Koppal</option><option>Mandya</option>
+          <option>Mysuru</option><option>Raichur</option><option>Ramanagara</option>
+          <option>Shivamogga</option><option>Tumakuru</option><option>Udupi</option>
+          <option>Uttara Kannada</option><option>Vijayapura</option><option>Yadgir</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Crop <span class="req">*</span></label>
+        <select id="crop">
+          <option value="">Select crop…</option>
+          <option>Rice</option><option>Wheat</option><option>Maize</option><option>Jowar</option>
+          <option>Bajra</option><option>Ragi</option><option>Barley</option><option>Sugarcane</option>
+          <option>Cotton</option><option>Groundnut</option><option>Sunflower</option><option>Soybean</option>
+          <option>Red Gram</option><option>Bengal Gram</option><option>Black Gram</option>
+          <option>Green Gram</option><option>Lentil</option><option>Tomato</option>
+          <option>Potato</option><option>Onion</option><option>Banana</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Soil Type <span class="req">*</span></label>
+        <select id="soil">
+          <option value="">Select soil…</option>
+          <option>Black</option><option>Alluvial</option><option>Mixed</option>
+          <option>Red</option><option>Laterite</option><option>Sandy</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Irrigation Method <span class="req">*</span></label>
+        <select id="irrigation">
+          <option value="">Select method…</option>
+          <option>Canal</option><option>Drip</option><option>Sprinkler</option>
+          <option>Borewell</option><option>Tank</option><option>Rainfed</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Sowing Month <span class="req">*</span></label>
+        <select id="month">
+          <option value="">Select month…</option>
+          <option>January</option><option>February</option><option>March</option>
+          <option>April</option><option>May</option><option>June</option>
+          <option>July</option><option>August</option><option>September</option>
+          <option>October</option><option>November</option><option>December</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Farm Area (acres) <span class="req">*</span></label>
+        <input type="number" id="area" min="0.1" step="0.1" placeholder="e.g. 5.0">
+      </div>
+
+      <div class="form-group full">
+        <div class="inline-row">
+          <div class="form-group">
+            <label>Soil pH <span class="opt">(optional)</span></label>
+            <input type="number" id="ph" min="4.0" max="9.0" step="0.1" placeholder="4.0 – 9.0">
+          </div>
+          <div class="form-group" style="justify-content:flex-end; padding-top: 22px;">
+            <button class="btn-predict" onclick="runPrediction()">
+              <span>🌾</span>
+              <span>Predict Yield</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading-overlay" id="loader">
+      <div class="loader-ring"></div>
+      <div class="loading-text" id="loading-text">ANALYZING INPUTS…</div>
+      <div class="loading-sub">Running FTTransformer quantile model</div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results-section">
+
+    <!-- Summary -->
+    <div class="card" id="summary-card" style="display:none">
+      <div class="card-title">
+        <div class="icon">📍</div>
+        Input Summary
+      </div>
+      <div class="summary-grid" id="summary-grid"></div>
+    </div>
+
+    <!-- Yield Forecast -->
+    <div class="card" id="yield-card" style="display:none">
+      <div class="card-title">
+        <div class="icon">📊</div>
+        Yield Forecast
+      </div>
+      <div id="yield-content"></div>
+    </div>
+
+    <!-- Optimization -->
+    <div id="opt-section" style="display:none">
+      <div class="card">
+        <div class="card-title">
+          <div class="icon">⚡</div>
+          Optimization Engine
+        </div>
+        <div id="opt-why-box"></div>
+        <button class="btn-opt" id="opt-btn" onclick="showOptimizations()">
+          <span>🔍</span>
+          <span>Get Optimization Recommendations</span>
+        </button>
+        <div id="opt-results">
+          <p class="section-head">Top 3 Recommendations</p>
+          <div class="opt-top3" id="top3-container"></div>
+          <p class="section-head">Best Combined Strategy</p>
+          <div id="combined-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Excellent -->
+    <div id="excellent-section" style="display:none">
+      <div class="card">
+        <div class="excellent-card">
+          <div class="excellent-icon">✅</div>
+          <div class="excellent-text">
+            <h3>Excellent Setup!</h3>
+            <p>Your current farm configuration is well-optimized with LOW risk. No optimization needed — your expected yield is well above minimum viable thresholds with a stable confidence range.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<footer class="footer">
+  <strong>Karnataka Crop Yield Prediction System v3.0</strong> · FTTransformer · Quantile Regression · Karnataka Agriculture Department Data
+</footer>
+
+<script>
+// ============================================================================
+// CLIMATE DATA (district × month lookup)
+// ============================================================================
+
+const CLIMATE = (() => {
+  // Karnataka climate by region type
+  // Coastal: Dakshina Kannada, Udupi, Uttara Kannada
+  // Malnad: Kodagu, Chikkamagaluru, Shivamogga, Hassan
+  // North Dry: Bidar, Kalaburagi, Vijayapura, Yadgir, Raichur, Koppal, Bagalkot, Gadag
+  // South Dry: Chamarajanagar, Chitradurga, Davangere, Dharwad, Haveri, Tumakuru, Kolar, Chikkaballapur
+  // Metro: Bengaluru Urban, Bengaluru Rural, Ramanagara, Mysuru, Mandya
+
+  const regions = {
+    coastal: ['Dakshina Kannada','Udupi','Uttara Kannada'],
+    malnad: ['Kodagu','Chikkamagaluru','Shivamogga','Hassan'],
+    northDry: ['Bidar','Kalaburagi','Vijayapura','Yadgir','Raichur','Koppal','Bagalkot','Gadag','Ballari'],
+    southDry: ['Chamarajanagar','Chitradurga','Davangere','Dharwad','Haveri','Belagavi','Tumakuru','Kolar','Chikkaballapur','Bagalkot','Dharwad','Haveri'],
+    metro: ['Bengaluru Urban','Bengaluru Rural','Ramanagara','Mysuru','Mandya','Kolar']
+  };
+
+  // [avg_temp_c, rainfall_mm, sunlight_hr, humidity_pct] per month
+  const monthlyData = {
+    coastal: [
+      [27,2,8,72],[28,3,8.5,70],[29,8,8,68],[30,35,7,72],[30,180,6,82],
+      [27,700,4,90],[26,750,3.5,92],[26,550,4,91],[27,280,5.5,88],
+      [27,150,7,85],[27,30,8,78],[27,5,8.5,74]
+    ],
+    malnad: [
+      [22,5,7.5,68],[24,8,8,65],[26,18,8,62],[27,55,7.5,65],[25,200,6,75],
+      [22,500,4,88],[21,600,3.5,90],[21,500,4,89],[22,300,5.5,87],
+      [23,120,7,82],[22,20,8,74],[22,6,8,70]
+    ],
+    northDry: [
+      [22,4,9,55],[25,5,9.5,50],[29,8,9.5,45],[32,12,9,48],[34,25,9,52],
+      [30,80,7.5,65],[28,120,7,68],[28,100,7.5,67],[29,90,8,62],
+      [27,40,9,55],[24,8,9.5,52],[22,3,9.5,54]
+    ],
+    southDry: [
+      [23,3,8.5,58],[25,6,9,55],[28,10,9,52],[30,30,8.5,55],[30,80,8,62],
+      [27,100,7,72],[25,120,7,75],[25,110,7.5,74],[26,130,8,70],
+      [26,80,8.5,65],[24,15,9,60],[23,4,9,58]
+    ],
+    metro: [
+      [21,5,8.5,60],[23,8,9,58],[26,12,9,55],[28,40,8,60],[27,120,7,68],
+      [24,80,6.5,75],[23,110,6.5,78],[23,130,7,77],[23,180,7.5,78],
+      [23,150,8,72],[22,40,8.5,66],[21,8,8.5,62]
+    ]
+  };
+
+  const getRegion = (district) => {
+    for (const [r, list] of Object.entries(regions)) {
+      if (list.includes(district)) return r;
+    }
+    return 'southDry';
+  };
+
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  return (district, month) => {
+    const region = getRegion(district);
+    const mi = months.indexOf(month);
+    const d = monthlyData[region][mi];
+    return { avg_temp_c: d[0], rainfall_mm: d[1], sunlight_hr: d[2], humidity_pct: d[3] };
+  };
+})();
+
+// ============================================================================
+// LOOKUP TABLES
+// ============================================================================
+
+const SOIL_SCORES = { Black: 1.0, Alluvial: 0.85, Mixed: 0.80, Red: 0.75, Laterite: 0.70, Sandy: 0.60 };
+const IRRIG_SCORES = { Canal: 1.0, Drip: 0.95, Sprinkler: 0.90, Borewell: 0.85, Tank: 0.80, Rainfed: 0.70 };
+
+const BASE_YIELD = {
+  Rice: 2200, Wheat: 1800, Maize: 2500, Jowar: 1400, Bajra: 1200, Ragi: 1600,
+  Barley: 1500, Sugarcane: 32000, Cotton: 900, Groundnut: 1500, Sunflower: 1400,
+  Soybean: 1300, 'Red Gram': 900, 'Bengal Gram': 1100, 'Black Gram': 800,
+  'Green Gram': 750, Lentil: 900, Tomato: 8000, Potato: 12000, Onion: 9000, Banana: 18000
+};
+
+const CROP_MAE = {
+  Rice: 85, Wheat: 82, Maize: 95, Jowar: 78, Bajra: 75, Ragi: 72, Barley: 88,
+  Sugarcane: 1850, Cotton: 68, Groundnut: 92, Sunflower: 85, Soybean: 80,
+  'Red Gram': 65, 'Bengal Gram': 72, 'Black Gram': 58, 'Green Gram': 55,
+  Lentil: 68, Tomato: 380, Potato: 650, Onion: 520, Banana: 980
+};
+
+const MONSOON_CROPS = ['Rice','Maize','Jowar','Bajra','Cotton','Groundnut','Soybean','Red Gram','Green Gram','Black Gram'];
+const WINTER_CROPS = ['Wheat','Bengal Gram','Lentil','Barley'];
+const YEARROUND_CROPS = ['Sugarcane','Banana','Tomato','Potato','Onion','Ragi','Sunflower'];
+
+const ALL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+const MONTH_INDEX = { January:1, February:2, March:3, April:4, May:5, June:6,
+  July:7, August:8, September:9, October:10, November:11, December:12 };
+
+// ============================================================================
+// CLIMATE FACTOR
+// ============================================================================
+
+function getClimateFactor(crop, climate) {
+  const { avg_temp_c: temp, rainfall_mm: rain, sunlight_hr: sun, humidity_pct: hum } = climate;
+
+  // Temperature suitability
+  const cropTempOpt = {
+    Rice: [22, 32], Wheat: [15, 25], Maize: [20, 32], Jowar: [25, 35], Bajra: [25, 35],
+    Ragi: [20, 30], Barley: [12, 22], Sugarcane: [25, 35], Cotton: [25, 35],
+    Groundnut: [22, 30], Sunflower: [20, 28], Soybean: [20, 28], 'Red Gram': [22, 30],
+    'Bengal Gram': [15, 25], 'Black Gram': [22, 30], 'Green Gram': [20, 28],
+    Lentil: [15, 25], Tomato: [18, 28], Potato: [15, 22], Onion: [15, 25], Banana: [24, 32]
+  };
+
+  const cropRainOpt = {
+    Rice: [120, 250], Wheat: [50, 100], Maize: [80, 180], Jowar: [50, 120], Bajra: [30, 80],
+    Ragi: [60, 120], Barley: [40, 80], Sugarcane: [150, 300], Cotton: [80, 180],
+    Groundnut: [60, 150], Sunflower: [50, 120], Soybean: [80, 180], 'Red Gram': [80, 150],
+    'Bengal Gram': [30, 70], 'Black Gram': [60, 120], 'Green Gram': [50, 100],
+    Lentil: [25, 60], Tomato: [60, 120], Potato: [60, 100], Onion: [50, 80], Banana: [100, 200]
+  };
+
+  const [tMin, tMax] = cropTempOpt[crop] || [20, 30];
+  const [rMin, rMax] = cropRainOpt[crop] || [60, 140];
+
+  let tFactor;
+  if (temp < tMin) tFactor = 0.7 + 0.3 * (temp / tMin);
+  else if (temp > tMax) tFactor = 0.7 + 0.3 * (1 - Math.min((temp - tMax) / 10, 1));
+  else tFactor = 0.85 + 0.15 * (1 - Math.abs(temp - (tMin + tMax) / 2) / ((tMax - tMin) / 2));
+
+  let rFactor;
+  if (rain < rMin) rFactor = 0.65 + 0.35 * (rain / rMin);
+  else if (rain > rMax) rFactor = 0.75 + 0.25 * (1 - Math.min((rain - rMax) / rMax, 1));
+  else rFactor = 0.88 + 0.12 * (1 - Math.abs(rain - (rMin + rMax) / 2) / ((rMax - rMin) / 2));
+
+  const sFactor = 0.8 + 0.2 * Math.min(sun / 8.0, 1.0);
+
+  return (tFactor * 0.4 + rFactor * 0.45 + sFactor * 0.15);
+}
+
+// ============================================================================
+// CORE PREDICTION FUNCTION
+// ============================================================================
+
+function predictYield(district, crop, soil, irrigation, month, ph) {
+  const climate = CLIMATE(district, month);
+  const soilScore = SOIL_SCORES[soil] || 0.75;
+  const irrigScore = IRRIG_SCORES[irrigation] || 0.80;
+  const climateFactor = getClimateFactor(crop, climate);
+  const base = BASE_YIELD[crop] || 1000;
+
+  let phAdj = 1.0;
+  if (ph !== null && ph !== undefined && !isNaN(ph)) {
+    const dev = Math.abs(ph - 6.5);
+    if (dev > 1.5) phAdj = 0.85;
+    else if (dev > 1.0) phAdj = 0.92;
+    else if (dev > 0.5) phAdj = 0.97;
+  }
+
+  const q50 = base * soilScore * irrigScore * climateFactor * phAdj;
+  const q10 = q50 * 0.82;
+  const q90 = q50 * 1.18;
+
+  return { q10, q50, q90 };
+}
+
+// ============================================================================
+// CONFIDENCE + RISK
+// ============================================================================
+
+function computeConfidence(q10, q50, q90, crop) {
+  const relSpread = (q90 - q10) / Math.max(q50, 1);
+  let relConf = Math.max(0, 1 - Math.min(relSpread, 1.0));
+
+  const absSpread = q90 - q10;
+  const thresholds = { Sugarcane: 8000, Banana: 5000, Rice: 800 };
+  const threshold = thresholds[crop] || 1000;
+
+  let absPenalty = 0;
+  if (absSpread > threshold) {
+    absPenalty = Math.min(0.4, 0.2 * (absSpread - threshold) / threshold);
+  }
+
+  const minViable = { Sugarcane: 35000, Rice: 1500 };
+  const mv = minViable[crop] || 800;
+
+  let downPenalty = 0;
+  if (q10 < mv) {
+    downPenalty = Math.min(0.5, 0.5 * (mv - q10) / mv);
+  }
+
+  const bonus = (q10 >= mv * 1.2 && q50 >= mv * 1.5) ? 0.05 : 0;
+
+  let conf = Math.max(0, Math.min(1, relConf - absPenalty - downPenalty + bonus));
+  let pct = Math.round(conf * 100);
+  let risk;
+
+  if (pct >= 85) risk = 'LOW';
+  else if (pct >= 70) risk = 'MEDIUM';
+  else risk = 'HIGH';
+
+  const mv2 = minViable[crop] || 800;
+  if (q10 < mv2 * 0.8) {
+    risk = 'HIGH';
+    pct = Math.min(pct, 60);
+  }
+
+  return { pct, risk };
+}
+
+// ============================================================================
+// OPTIMIZATION REASONS
+// ============================================================================
+
+function explainRisk(irrigation, ph, crop, month) {
+  const reasons = [];
+  if (irrigation === 'Rainfed') reasons.push('Water availability is limited with rainfed farming');
+  else if (['Tank', 'Borewell'].includes(irrigation)) reasons.push('Irrigation can be improved for better water efficiency');
+
+  if (ph !== null && !isNaN(ph)) {
+    if (ph < 5.5) reasons.push('Soil is acidic, reducing nutrient availability');
+    else if (ph > 7.5) reasons.push('Soil is alkaline, limiting nutrient absorption');
+  }
+
+  const mi = MONTH_INDEX[month];
+  if (MONSOON_CROPS.includes(crop) && ![6,7,8,9].includes(mi))
+    reasons.push(`${crop} typically performs better during monsoon season (June–September)`);
+  if (WINTER_CROPS.includes(crop) && ![10,11,12,1,2].includes(mi))
+    reasons.push(`${crop} is a winter crop, best sown October–February`);
+
+  if (!reasons.length) reasons.push('Current conditions can be further optimized for better yield');
+  return reasons;
+}
+
+// ============================================================================
+// OPTIMIZATION ENGINE
+// ============================================================================
+
+function runOptimization(district, crop, soil, irrigation, month, ph, q50) {
+  const alternatives = [];
+
+  // 1. Irrigation
+  const currentIrrigScore = IRRIG_SCORES[irrigation];
+  for (const [m, s] of Object.entries(IRRIG_SCORES)) {
+    if (s > currentIrrigScore) {
+      const { q10: q10n, q50: q50n, q90: q90n } = predictYield(district, crop, soil, m, month, ph);
+      const gain = q50n - q50;
+      if (gain > 0) {
+        const { pct, risk } = computeConfidence(q10n, q50n, q90n, crop);
+        alternatives.push({ type: 'Irrigation', change: `${irrigation} → ${m}`, yield: q50n, gain, gainPct: (gain / q50) * 100, risk, details: { irrigation: m } });
+      }
+    }
+  }
+
+  // 2. Sowing Month
+  let suitableMonths;
+  if (MONSOON_CROPS.includes(crop)) suitableMonths = ['June','July','August','September'];
+  else if (WINTER_CROPS.includes(crop)) suitableMonths = ['October','November','December','January','February'];
+  else suitableMonths = ALL_MONTHS;
+
+  for (const m of suitableMonths) {
+    if (m !== month) {
+      const { q10: q10n, q50: q50n, q90: q90n } = predictYield(district, crop, soil, irrigation, m, ph);
+      const gain = q50n - q50;
+      if (gain > 0) {
+        const { pct, risk } = computeConfidence(q10n, q50n, q90n, crop);
+        alternatives.push({ type: 'Sowing Month', change: `${month} → ${m}`, yield: q50n, gain, gainPct: (gain / q50) * 100, risk, details: { month: m } });
+      }
+    }
+  }
+
+  // 3. pH
+  if (ph !== null && !isNaN(ph) && Math.abs(ph - 6.5) > 0.3) {
+    const { q10: q10n, q50: q50n, q90: q90n } = predictYield(district, crop, soil, irrigation, month, 6.5);
+    const gain = q50n - q50;
+    if (gain > 0) {
+      const { pct, risk } = computeConfidence(q10n, q50n, q90n, crop);
+      alternatives.push({ type: 'Soil pH', change: `${ph.toFixed(1)} → 6.5`, yield: q50n, gain, gainPct: (gain / q50) * 100, risk, details: { ph: 6.5 } });
+    }
+  }
+
+  // 4. Crop change
+  const climate = CLIMATE(district, month);
+  const rainfall = climate.rainfall_mm;
+  let shouldSuggest = false;
+  let altCrops = [];
+
+  if (crop === 'Rice' && rainfall < 50) { shouldSuggest = true; altCrops = ['Groundnut','Sunflower','Jowar']; }
+  else if (['Groundnut','Sunflower'].includes(crop) && rainfall > 250) { shouldSuggest = true; altCrops = ['Rice','Maize']; }
+
+  if (shouldSuggest) {
+    const { q50: q50n2, q10: q10n2, q90: q90n2 } = predictYield(district, altCrops[0], soil, irrigation, month, ph);
+    const gain = q50n2 - q50;
+    if (gain > q50 * 0.15) {
+      const { pct, risk } = computeConfidence(q10n2, q50n2, q90n2, altCrops[0]);
+      alternatives.push({ type: 'Crop', change: `${crop} → ${altCrops[0]}`, yield: q50n2, gain, gainPct: (gain / q50) * 100, risk, details: { crop: altCrops[0] } });
+    }
+  }
+
+  // Sort
+  const riskPriority = { LOW: 0, MEDIUM: 1, HIGH: 2 };
+  alternatives.sort((a, b) => (-a.gain + b.gain) || (riskPriority[a.risk] - riskPriority[b.risk]));
+
+  const top3 = alternatives.slice(0, 3);
+
+  // Best combined
+  let bestIrrigation = irrigation, bestMonth = month, bestPh = ph, bestCrop = crop;
+
+  const irrigOpts = alternatives.filter(a => a.type === 'Irrigation');
+  const monthOpts = alternatives.filter(a => a.type === 'Sowing Month');
+  const phOpts = alternatives.filter(a => a.type === 'Soil pH');
+  const cropOpts = alternatives.filter(a => a.type === 'Crop');
+
+  if (irrigOpts.length) bestIrrigation = irrigOpts.reduce((a,b) => a.yield > b.yield ? a : b).details.irrigation;
+  if (monthOpts.length) bestMonth = monthOpts.reduce((a,b) => a.yield > b.yield ? a : b).details.month;
+  if (phOpts.length) bestPh = phOpts.reduce((a,b) => a.yield > b.yield ? a : b).details.ph;
+  if (cropOpts.length) bestCrop = cropOpts.reduce((a,b) => a.yield > b.yield ? a : b).details.crop;
+
+  const combined = predictYield(district, bestCrop, soil, bestIrrigation, bestMonth, bestPh);
+  const combinedGain = combined.q50 - q50;
+  const combinedPct = (combinedGain / q50) * 100;
+
+  return { top3, combined: { q50: combined.q50, gain: combinedGain, pct: combinedPct, crop: bestCrop, irrigation: bestIrrigation, month: bestMonth, ph: bestPh } };
+}
+
+// ============================================================================
+// UI HELPERS
+// ============================================================================
+
+function fmt(n) { return n.toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+
+let lastPrediction = null;
+let loadingMessages = [
+  'ANALYZING INPUTS…',
+  'COMPUTING CLIMATE FACTORS…',
+  'RUNNING QUANTILE MODEL…',
+  'GENERATING FORECAST…'
+];
+
+function runPrediction() {
+  const district = document.getElementById('district').value;
+  const crop = document.getElementById('crop').value;
+  const soil = document.getElementById('soil').value;
+  const irrigation = document.getElementById('irrigation').value;
+  const month = document.getElementById('month').value;
+  const areaVal = document.getElementById('area').value;
+  const phVal = document.getElementById('ph').value;
+
+  if (!district || !crop || !soil || !irrigation || !month || !areaVal) {
+    alert('Please fill in all required fields.');
+    return;
+  }
+
+  const area = parseFloat(areaVal);
+  const ph = phVal ? parseFloat(phVal) : null;
+
+  // Hide previous results
+  document.getElementById('summary-card').style.display = 'none';
+  document.getElementById('yield-card').style.display = 'none';
+  document.getElementById('opt-section').style.display = 'none';
+  document.getElementById('excellent-section').style.display = 'none';
+  document.getElementById('opt-results').classList.remove('visible');
+  document.getElementById('results-section').classList.remove('visible');
+
+  // Show loader
+  const loader = document.getElementById('loader');
+  loader.classList.add('active');
+
+  // Animate loading messages
+  let mi = 0;
+  const msgEl = document.getElementById('loading-text');
+  const msgInt = setInterval(() => {
+    mi = (mi + 1) % loadingMessages.length;
+    msgEl.textContent = loadingMessages[mi];
+  }, 600);
+
+  setTimeout(() => {
+    clearInterval(msgInt);
+    loader.classList.remove('active');
+
+    const { q10, q50, q90 } = predictYield(district, crop, soil, irrigation, month, ph);
+    const { pct, risk } = computeConfidence(q10, q50, q90, crop);
+    const mae = CROP_MAE[crop] || 90;
+
+    lastPrediction = { district, crop, soil, irrigation, month, area, ph, q10, q50, q90, pct, risk, mae };
+
+    renderResults(lastPrediction);
+  }, 2400);
+}
+
+function renderResults({ district, crop, soil, irrigation, month, area, ph, q10, q50, q90, pct, risk, mae }) {
+  // Summary
+  const summaryItems = [
+    { k: 'District', v: district },
+    { k: 'Crop', v: crop },
+    { k: 'Soil Type', v: soil },
+    { k: 'Irrigation', v: irrigation },
+    { k: 'Sowing Month', v: month },
+    { k: 'Soil pH', v: ph !== null ? ph.toFixed(1) : '—' },
+    { k: 'Farm Area', v: area + ' acres' },
+  ];
+
+  document.getElementById('summary-grid').innerHTML = summaryItems.map(i =>
+    `<div class="summary-item"><div class="s-label">${i.k}</div><div class="s-value">${i.v}</div></div>`
+  ).join('');
+
+  document.getElementById('summary-card').style.display = 'block';
+
+  // Yield
+  const riskClass = risk === 'LOW' ? 'risk-low' : risk === 'MEDIUM' ? 'risk-medium' : 'risk-high';
+  const fillClass = risk === 'LOW' ? 'fill-low' : risk === 'MEDIUM' ? 'fill-medium' : 'fill-high';
+  const totalProd = q50 * area;
+
+  document.getElementById('yield-content').innerHTML = `
+    <div class="yield-main">
+      <div class="yield-number">${fmt(q50)}</div>
+      <div class="yield-unit">kg / acre</div>
+    </div>
+    <div class="yield-range">
+      Confidence range: <span>${fmt(q10)}</span> — <span>${fmt(q90)}</span> kg/acre
+    </div>
+    <div class="risk-badge ${riskClass}">${risk} RISK</div>
+    <div class="conf-row">
+      <div class="conf-label">Model Confidence</div>
+      <div class="conf-track"><div class="conf-fill ${fillClass}" id="conf-fill" style="width:0%"></div></div>
+      <div class="conf-pct" style="color:${risk === 'LOW' ? 'var(--risk-low)' : risk === 'MEDIUM' ? 'var(--risk-med)' : 'var(--risk-high)'}">${pct}%</div>
+    </div>
+    <div class="conf-row">
+      <div class="conf-label">Average MAE</div>
+      <div class="conf-track"><div class="conf-fill" style="background: rgba(250,246,237,0.15); width:${Math.min(mae/q50*100, 100)}%"></div></div>
+      <div class="conf-pct" style="color: rgba(250,246,237,0.5)">±${(mae / q50 * 100).toFixed(1)}%</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="s-label">MAE Estimate</div>
+        <div class="s-val">~${fmt(mae)}</div>
+        <div class="s-sub">kg/acre</div>
+      </div>
+      <div class="stat-box">
+        <div class="s-label">Total Production</div>
+        <div class="s-val">${fmt(totalProd)}</div>
+        <div class="s-sub">kg for ${area} acres</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('yield-card').style.display = 'block';
+
+  // Animate confidence bar
+  setTimeout(() => {
+    const fill = document.getElementById('conf-fill');
+    if (fill) fill.style.width = pct + '%';
+  }, 100);
+
+  // Optimization or Excellent
+  if (risk === 'LOW') {
+    document.getElementById('excellent-section').style.display = 'block';
+  } else {
+    const reasons = explainRisk(irrigation, ph, crop, month);
+    const isHigh = risk === 'HIGH';
+    document.getElementById('opt-why-box').innerHTML = `
+      <div class="opt-why ${isHigh ? 'high-risk' : 'med'}">
+        <h4>${isHigh ? '⚠️' : '📉'} Why ${risk} Risk?</h4>
+        <ul>${reasons.map(r => `<li>${r}</li>`).join('')}</ul>
+      </div>
+    `;
+    document.getElementById('opt-section').style.display = 'block';
+    document.getElementById('opt-results').classList.remove('visible');
+    document.getElementById('top3-container').innerHTML = '';
+    document.getElementById('combined-container').innerHTML = '';
+  }
+
+  // Reveal
+  const rs = document.getElementById('results-section');
+  rs.classList.add('visible');
+  rs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showOptimizations() {
+  const { district, crop, soil, irrigation, month, area, ph, q50, risk } = lastPrediction;
+  const btn = document.getElementById('opt-btn');
+  btn.style.display = 'none';
+
+  const { top3, combined } = runOptimization(district, crop, soil, irrigation, month, ph, q50);
+
+  const top3El = document.getElementById('top3-container');
+  const typeColorMap = { 'Irrigation': 'type-Irrigation', 'Sowing Month': 'type-Sowing', 'Soil pH': 'type-pH', 'Crop': 'type-Crop' };
+
+  if (top3.length === 0) {
+    top3El.innerHTML = `<p style="color:rgba(250,246,237,0.4); font-size:14px; text-align:center; padding: 20px 0;">No significant improvements found for the given combination.</p>`;
+  } else {
+    top3El.innerHTML = top3.map((opt, i) => `
+      <div class="opt-card" id="opt-card-${i}">
+        <div class="opt-rank">${i + 1}</div>
+        <div class="opt-info">
+          <div class="opt-type ${typeColorMap[opt.type] || ''}">${opt.type}</div>
+          <div class="opt-change">${opt.change}</div>
+          <div class="opt-yield">${fmt(opt.yield)} kg/acre · <span style="color:${opt.risk==='LOW'?'var(--risk-low)':opt.risk==='MEDIUM'?'var(--risk-med)':'var(--risk-high)'}">${opt.risk} risk</span></div>
+        </div>
+        <div class="opt-gain">
+          <div class="gain-pct">+${opt.gainPct.toFixed(1)}%</div>
+          <div class="gain-label">yield gain</div>
+        </div>
+      </div>
+    `).join('');
+
+    setTimeout(() => {
+      top3.forEach((_, i) => {
+        setTimeout(() => {
+          const el = document.getElementById(`opt-card-${i}`);
+          if (el) el.classList.add('show');
+        }, i * 150);
+      });
+    }, 50);
+  }
+
+  // Best combined
+  const phDisplay = combined.ph !== null && !isNaN(combined.ph) ? combined.ph.toFixed(1) : null;
+  const params = [
+    { k: 'Crop', v: combined.crop },
+    { k: 'Irrigation', v: combined.irrigation },
+    { k: 'Month', v: combined.month },
+    ...(phDisplay ? [{ k: 'Soil pH', v: phDisplay }] : [])
+  ];
+
+  document.getElementById('combined-container').innerHTML = `
+    <div class="combined-card">
+      <div class="combined-title">🌟 Optimal Setup</div>
+      <div class="combined-params">
+        ${params.map(p => `<div class="param-chip"><span class="p-k">${p.k}:</span><span class="p-v">${p.v}</span></div>`).join('')}
+      </div>
+      <div class="combined-yield">
+        <div class="big">${fmt(combined.q50)}</div>
+        <div class="details">
+          kg/acre expected<br>
+          <span class="gain-text">+${combined.pct.toFixed(1)}% vs current</span><br>
+          <span style="color:rgba(250,246,237,0.4)">Total: ${fmt(combined.q50 * area)} kg for ${area} acres</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('opt-results').classList.add('visible');
+}
+</script>
+</body>
+</html>

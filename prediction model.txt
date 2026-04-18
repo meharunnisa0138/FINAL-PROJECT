@@ -1,0 +1,685 @@
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+import pickle
+import warnings
+import sys
+import os
+from datetime import datetime
+warnings.filterwarnings('ignore')
+
+print("=" * 80)
+print("KARNATAKA CROP YIELD PREDICTION SYSTEM v3.0")
+print("=" * 80)
+print()
+
+# ============================================================================
+# LOAD TRAINED MODEL & ARTIFACTS
+# ============================================================================
+
+print("📂 Loading model and knowledge base...")
+
+required_files = [
+    '/kaggle/input/trained-model/normalization (1).pkl',
+'/kaggle/input/trained-model/model_config (1).pkl',
+'/kaggle/input/trained-model/area_month_climate (1).pkl',
+'/kaggle/input/trained-model/label_encoders (1).pkl',
+'/kaggle/input/trained-model/ftt_model.pth',
+'/kaggle/input/trained-model/metadata (1).pkl',
+'/kaggle/input/trained-model/crop_agronomy (1).pkl',
+'/kaggle/input/trained-model/crop_soil_irrigation.pkl'
+]
+
+missing_files = [f for f in required_files if not os.path.exists(f)]
+if missing_files:
+    print("❌ ERROR: Missing files:")
+    for f in missing_files:
+        print(f"  ✗ {f}")
+    print("\n💡 Run: python 1_train_FINAL_CLEAN.py first!")
+    sys.exit(1)
+
+# ============================================================================
+# MODEL ARCHITECTURE
+# ============================================================================
+
+class FeatureTokenizer(nn.Module):
+    def __init__(self, num_features, d_model):
+        super().__init__()
+        self.linear = nn.Linear(num_features, d_model)
+        self.layer_norm = nn.LayerNorm(d_model)
+    def forward(self, x):
+        return self.layer_norm(self.linear(x))
+
+class FTTransformer(nn.Module):
+    def __init__(self, num_categorical, categorical_cardinalities, num_numeric, 
+                 d_model=128, n_heads=8, n_layers=4, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.num_categorical = num_categorical
+        self.num_numeric = num_numeric
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model))
+        self.cat_embeddings = nn.ModuleList([
+            nn.Embedding(cardinality, d_model) 
+            for cardinality in categorical_cardinalities
+        ])
+        self.numeric_tokenizer = FeatureTokenizer(1, d_model)
+        total_tokens = 1 + num_categorical + num_numeric
+        self.position_embeddings = nn.Parameter(torch.randn(1, total_tokens, d_model))
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=n_heads, dim_feedforward=4*d_model,
+            dropout=dropout, activation='gelu', batch_first=True, norm_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.quantile_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(d_model, d_model // 2),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_model // 2, 1)
+            ) for _ in range(3)
+        ])
+    def forward(self, cat_features, num_features):
+        batch_size = cat_features.size(0)
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        cat_tokens = torch.stack([
+            emb(cat_features[:, i]) 
+            for i, emb in enumerate(self.cat_embeddings)
+        ], dim=1)
+        num_tokens = torch.stack([
+            self.numeric_tokenizer(num_features[:, i:i+1])
+            for i in range(self.num_numeric)
+        ], dim=1)
+        all_tokens = torch.cat([cls_tokens, cat_tokens, num_tokens], dim=1)
+        all_tokens = all_tokens + self.position_embeddings
+        encoded = self.transformer(all_tokens)
+        cls_output = encoded[:, 0, :]
+        q10 = self.quantile_heads[0](cls_output)
+        q50 = self.quantile_heads[1](cls_output)
+        q90 = self.quantile_heads[2](cls_output)
+        return torch.cat([q10, q50, q90], dim=1)
+
+# ============================================================================
+# LOAD ARTIFACTS
+# ============================================================================
+
+try:
+    with open('/kaggle/input/trained-model/model_config (1).pkl', 'rb') as f:
+        model_config = pickle.load(f)
+    with open('/kaggle/input/trained-model/label_encoders (1).pkl', 'rb') as f:
+        label_encoders = pickle.load(f)
+    with open('/kaggle/input/trained-model/normalization (1).pkl', 'rb') as f:
+        normalization = pickle.load(f)
+        num_mean = normalization['num_mean']
+        num_std = normalization['num_std']
+    with open('/kaggle/input/trained-model/metadata (1).pkl', 'rb') as f:
+        metadata = pickle.load(f)
+    crop_agronomy = pd.read_pickle('/kaggle/input/trained-model/crop_agronomy (1).pkl')
+    area_month_climate = pd.read_pickle('/kaggle/input/trained-model/area_month_climate (1).pkl')
+    
+    model = FTTransformer(**model_config)
+    model.load_state_dict(torch.load('/kaggle/input/trained-model/ftt_model.pth', map_location='cpu', weights_only=True))
+    model.eval()
+    print("✅ System ready")
+    print()
+except Exception as e:
+    print(f"❌ Error: {e}")
+    sys.exit(1)
+
+# ============================================================================
+# CROP-SPECIFIC MAE
+# ============================================================================
+CROP_MAE = {
+    'Rice': 85, 'Wheat': 82, 'Maize': 95, 'Jowar': 78, 'Bajra': 75,
+    'Ragi': 72, 'Barley': 88, 'Sugarcane': 1850, 'Cotton': 68,
+    'Groundnut': 92, 'Sunflower': 85, 'Soybean': 80, 'Red Gram': 65,
+    'Bengal Gram': 72, 'Black Gram': 58, 'Green Gram': 55, 'Lentil': 68,
+    'Tomato': 380, 'Potato': 650, 'Onion': 520, 'Banana': 980,
+    'default': 90
+}
+
+# ============================================================================
+# CROP SUITABILITY (for optimization logic)
+# ============================================================================
+
+# Monsoon crops (June-September)
+MONSOON_CROPS = ['Rice', 'Maize', 'Jowar', 'Bajra', 'Cotton', 'Groundnut', 
+                 'Soybean', 'Red Gram', 'Green Gram', 'Black Gram']
+
+# Winter crops (October-February)
+WINTER_CROPS = ['Wheat', 'Bengal Gram', 'Lentil', 'Mustard', 'Barley', 
+                'Field Pea', 'Coriander', 'Cumin']
+
+# Year-round crops
+YEARROUND_CROPS = ['Sugarcane', 'Banana', 'Coconut', 'Arecanut', 'Coffee',
+                   'Tomato', 'Potato', 'Onion', 'Cabbage', 'Cauliflower']
+
+# ============================================================================
+# PREDICTION FUNCTION
+# ============================================================================
+
+def predict_yield(area_name, crop_name, soil_type, irrigation_method, sowing_month, soil_ph=None):
+    """Make prediction - UNCHANGED from original"""
+    
+    # Encode
+    area_encoded = label_encoders['area_name'].transform([area_name])[0]
+    crop_encoded = label_encoders['crop_name'].transform([crop_name])[0]
+    soil_encoded = label_encoders['soil_type'].transform([soil_type])[0]
+    irrigation_encoded = label_encoders['irrigation_method'].transform([irrigation_method])[0]
+    month_encoded = label_encoders['sowing_month'].transform([sowing_month])[0]
+    
+    cat_encoded = [area_encoded, crop_encoded, soil_encoded, irrigation_encoded, month_encoded]
+    
+    # Get climate
+    try:
+        climate = area_month_climate.loc[(area_name, sowing_month)]
+        avg_temp = float(climate['avg_temp_c'])
+        rainfall = float(climate['rainfall_mm'])
+        sunlight = float(climate['sunlight_hr'])
+        humidity = float(climate['humidity_pct'])
+    except:
+        try:
+            area_data = area_month_climate.loc[area_name]
+            avg_temp = float(area_data['avg_temp_c'].mean())
+            rainfall = float(area_data['rainfall_mm'].mean())
+            sunlight = float(area_data['sunlight_hr'].mean())
+            humidity = float(area_data['humidity_pct'].mean())
+        except:
+            avg_temp, rainfall, sunlight, humidity = 28.0, 120.0, 6.5, 65.0
+    
+    # Get crop data
+    try:
+        plants_per_acre = float(crop_agronomy.loc[crop_name, ('plants_per_acre', 'mean')])
+    except:
+        plants_per_acre = 30000
+    
+    # Scores
+    soil_scores = {'Black': 1.0, 'Alluvial': 0.85, 'Mixed': 0.80, 'Red': 0.75, 'Laterite': 0.70, 'Sandy': 0.60}
+    irrigation_scores = {'Canal': 1.0, 'Drip': 0.95, 'Sprinkler': 0.90, 'Borewell': 0.85, 'Tank': 0.80, 'Rainfed': 0.70}
+    
+    soil_score = soil_scores.get(soil_type, 0.75)
+    irrigation_score = irrigation_scores.get(irrigation_method, 0.80)
+    
+    # pH adjustment
+    ph_adjustment = 1.0
+    if soil_ph is not None:
+        ph_deviation = abs(soil_ph - 6.5)
+        if ph_deviation > 1.5:
+            ph_adjustment = 0.85
+        elif ph_deviation > 1.0:
+            ph_adjustment = 0.92
+        elif ph_deviation > 0.5:
+            ph_adjustment = 0.97
+    
+    # Features
+    num_features = np.array([
+        avg_temp, rainfall, sunlight, humidity,
+        plants_per_acre, soil_score, irrigation_score
+    ], dtype=np.float32)
+    
+    num_features_normalized = (num_features - num_mean) / num_std
+    
+    cat_tensor = torch.LongTensor([cat_encoded])
+    num_tensor = torch.FloatTensor([num_features_normalized])
+    
+    with torch.no_grad():
+        predictions = model(cat_tensor, num_tensor)
+        q10 = max(0, float(predictions[0, 0].item()) * ph_adjustment)
+        q50 = max(q10, float(predictions[0, 1].item()) * ph_adjustment)
+        q90 = max(q50, float(predictions[0, 2].item()) * ph_adjustment)
+    
+    return q10, q50, q90
+
+def compute_confidence(q10, q50, q90, crop_name):
+    """Compute confidence - UNCHANGED"""
+    relative_spread = (q90 - q10) / max(q50, 1)
+    relative_confidence = max(0, 1 - min(relative_spread, 1.0))
+    
+    absolute_spread_kg = q90 - q10
+    thresholds = {'Sugarcane': 8000, 'Banana': 5000, 'Rice': 800, 'default': 1000}
+    threshold = thresholds.get(crop_name, thresholds['default'])
+    
+    if absolute_spread_kg > threshold:
+        absolute_penalty = min(0.4, 0.2 * (absolute_spread_kg - threshold) / threshold)
+    else:
+        absolute_penalty = 0
+    
+    min_viable_yields = {'Sugarcane': 35000, 'Rice': 1500, 'default': 800}
+    min_viable = min_viable_yields.get(crop_name, min_viable_yields['default'])
+    
+    if q10 < min_viable:
+        downside_penalty = min(0.5, 0.5 * (min_viable - q10) / min_viable)
+    else:
+        downside_penalty = 0
+    
+    stability_bonus = 0.05 if (q10 >= min_viable * 1.2 and q50 >= min_viable * 1.5) else 0
+    
+    confidence_score = relative_confidence - absolute_penalty - downside_penalty + stability_bonus
+    confidence_score = max(0.0, min(1.0, confidence_score))
+    confidence_pct = int(confidence_score * 100)
+    
+    if confidence_pct >= 85:
+        risk_level = "LOW"
+    elif confidence_pct >= 70:
+        risk_level = "MEDIUM"
+    else:
+        risk_level = "HIGH"
+    
+    if q10 < min_viable * 0.8:
+        risk_level = "HIGH"
+        confidence_pct = min(confidence_pct, 60)
+    
+    return confidence_pct, risk_level
+
+# ============================================================================
+# USER INTERFACE
+# ============================================================================
+
+def display_options(title, options, columns=3):
+    print(f"\n{title}")
+    print("-" * 80)
+    sorted_opts = sorted(enumerate(options, 1), key=lambda x: x[1])
+    for i, (idx, opt) in enumerate(sorted_opts):
+        print(f"  {idx:2d}. {opt:25s}", end="")
+        if (i + 1) % columns == 0:
+            print()
+    if len(sorted_opts) % columns != 0:
+        print()
+    print()
+
+def get_choice(prompt, max_val):
+    while True:
+        try:
+            val = int(input(prompt))
+            if 1 <= val <= max_val:
+                return val
+            print(f"  ⚠️  Enter 1-{max_val}")
+        except ValueError:
+            print("  ⚠️  Enter a number")
+        except KeyboardInterrupt:
+            print("\n👋 Goodbye!")
+            sys.exit(0)
+
+print("🌾 CROP YIELD PREDICTION SYSTEM")
+print("=" * 80)
+
+# Get inputs
+display_options("DISTRICTS:", metadata['districts'])
+area_name = metadata['districts'][get_choice(f"Select district (1-{len(metadata['districts'])}): ", len(metadata['districts'])) - 1]
+
+display_options("CROPS:", metadata['crops'])
+crop_name = metadata['crops'][get_choice(f"Select crop (1-{len(metadata['crops'])}): ", len(metadata['crops'])) - 1]
+
+display_options("SOIL TYPES:", metadata['soil_types'])
+soil_type = metadata['soil_types'][get_choice(f"Select soil (1-{len(metadata['soil_types'])}): ", len(metadata['soil_types'])) - 1]
+
+display_options("IRRIGATION:", metadata['irrigation_methods'])
+irrigation_method = metadata['irrigation_methods'][get_choice(f"Select irrigation (1-{len(metadata['irrigation_methods'])}): ", len(metadata['irrigation_methods'])) - 1]
+
+display_options("SOWING MONTH:", metadata['sowing_months'])
+sowing_month = metadata['sowing_months'][get_choice(f"Select month (1-{len(metadata['sowing_months'])}): ", len(metadata['sowing_months'])) - 1]
+
+print("\nSOIL pH (optional)")
+print("-" * 80)
+soil_ph = None
+ph_input = input("Enter pH (4.0-9.0) or press Enter to skip: ").strip()
+if ph_input:
+    try:
+        soil_ph = float(ph_input)
+        if not (4.0 <= soil_ph <= 9.0):
+            soil_ph = None
+    except:
+        soil_ph = None
+
+print("\nFARM AREA")
+print("-" * 80)
+area_acres = float(input("Enter area in acres: "))
+
+print()
+print("=" * 80)
+print("GENERATING PREDICTION...")
+print("=" * 80)
+print()
+
+# ============================================================================
+# BASELINE PREDICTION
+# ============================================================================
+
+q10, q50, q90 = predict_yield(area_name, crop_name, soil_type, irrigation_method, sowing_month, soil_ph)
+confidence_pct, risk_level = compute_confidence(q10, q50, q90, crop_name)
+crop_mae = CROP_MAE.get(crop_name, CROP_MAE['default'])
+
+# ============================================================================
+# DISPLAY RESULTS
+# ============================================================================
+
+print()
+print("═" * 80)
+print("PREDICTION RESULTS")
+print("═" * 80)
+print()
+print(f"📍 Location: {area_name}")
+print(f"🌾 Crop: {crop_name}")
+print(f"🌱 Soil: {soil_type}")
+print(f"💧 Irrigation: {irrigation_method}")
+print(f"📅 Month: {sowing_month}")
+if soil_ph:
+    print(f"🧪 Soil pH: {soil_ph}")
+print(f"📏 Area: {area_acres} acres")
+print()
+print("-" * 80)
+print("YIELD FORECAST")
+print("-" * 80)
+print(f"  Expected yield per acre: {q50:,.0f} kg/acre")
+print(f"  Confidence range: {q10:,.0f} - {q90:,.0f} kg/acre")
+print(f"  Risk level: {risk_level}")
+print(f"  Model confidence: {confidence_pct}%")
+print(f"  Average MAE: ~{crop_mae} kg/acre (±{crop_mae/q50*100:.1f}% error)")
+print()
+print(f"  Total expected production for {area_acres} acres: {q50 * area_acres:,.0f} kg")
+print()
+
+# ============================================================================
+# OPTIMIZATION ENGINE (OPT-IN, MEDIUM/HIGH RISK ONLY)
+# ============================================================================
+
+# Entry condition check
+if risk_level == "LOW":
+    print("-" * 80)
+    print("✅ EXCELLENT!")
+    print("-" * 80)
+    print("Your current setup is well-optimized with low risk.")
+    print("No optimization needed.")
+    print()
+    print("=" * 80)
+    print("✅ Prediction complete!")
+    print("=" * 80)
+    sys.exit(0)
+
+# Ask for opt-in
+print("-" * 80)
+print("OPTIMIZATION AVAILABLE")
+print("-" * 80)
+print(f"Your current yield has {risk_level} risk.")
+print("Would you like recommendations to improve yield?")
+print()
+
+opt_in = input("Get optimization recommendations? (y/n): ").strip().lower()
+
+if opt_in != 'y':
+    print()
+    print("=" * 80)
+    print("✅ Prediction complete!")
+    print("=" * 80)
+    sys.exit(0)
+
+print()
+print("=" * 80)
+print("ANALYZING OPTIMIZATION OPTIONS...")
+print("=" * 80)
+print()
+
+# ============================================================================
+# EXPLAIN WHY YIELD IS LOW/MEDIUM
+# ============================================================================
+
+reasons = []
+
+# Check irrigation
+if irrigation_method == 'Rainfed':
+    reasons.append("Water availability is limited with rainfed farming")
+elif irrigation_method in ['Tank', 'Borewell']:
+    reasons.append("Irrigation can be improved for better water efficiency")
+
+# Check pH
+if soil_ph:
+    if soil_ph < 5.5:
+        reasons.append("Soil is acidic, reducing nutrient availability")
+    elif soil_ph > 7.5:
+        reasons.append("Soil is alkaline, limiting nutrient absorption")
+
+# Check timing - be more specific about current vs optimal
+month_index = {'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+               'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12}
+
+current_month_num = month_index.get(sowing_month, 6)
+
+# Monsoon crop in wrong season
+if crop_name in MONSOON_CROPS:
+    if current_month_num not in [6, 7, 8, 9]:
+        reasons.append(f"{crop_name} typically performs better during monsoon season (June-September)")
+    # Even if in monsoon season, mention it performs better in specific months
+    elif current_month_num in [6, 7, 8, 9]:
+        # Check if there's a better month within monsoon season
+        pass  # Will be handled by optimization
+
+# Winter crop in wrong season
+if crop_name in WINTER_CROPS:
+    if current_month_num not in [10, 11, 12, 1, 2]:
+        reasons.append(f"{crop_name} is a winter crop, best sown October-February")
+
+if not reasons:
+    reasons.append("Current conditions can be optimized for better yield")
+
+print(f"Current expected yield: {q50:,.0f} kg/acre ({risk_level} risk)")
+print()
+print("Reason:")
+print(f"  {reasons[0]}")
+if len(reasons) > 1:
+    print(f"  {reasons[1]}")
+print()
+print("To increase yield, consider:")
+print()
+
+# ============================================================================
+# SIMULATION: ONE VARIABLE AT A TIME
+# ============================================================================
+
+alternatives = []
+
+# 1. IRRIGATION OPTIMIZATION (Priority #1)
+irrigation_methods = ['Canal', 'Drip', 'Sprinkler', 'Borewell', 'Tank', 'Rainfed']
+irrigation_scores = {'Canal': 1.0, 'Drip': 0.95, 'Sprinkler': 0.90, 'Borewell': 0.85, 'Tank': 0.80, 'Rainfed': 0.70}
+
+current_score = irrigation_scores[irrigation_method]
+better_irrigation = [(m, s) for m, s in irrigation_scores.items() if s > current_score]
+
+for irr_method, score in better_irrigation[:2]:  # Top 2 better options
+    try:
+        q10_new, q50_new, q90_new = predict_yield(area_name, crop_name, soil_type, irr_method, sowing_month, soil_ph)
+        gain = q50_new - q50
+        if gain > 0:
+            _, risk_new = compute_confidence(q10_new, q50_new, q90_new, crop_name)
+            alternatives.append({
+                'type': 'Irrigation',
+                'change': f'{irrigation_method} → {irr_method}',
+                'yield': q50_new,
+                'gain': gain,
+                'gain_pct': (gain / q50) * 100,
+                'risk': risk_new,
+                'details': {'irrigation': irr_method}
+            })
+    except:
+        pass
+
+# 2. SOWING MONTH OPTIMIZATION (Priority #2)
+suitable_months = []
+if crop_name in MONSOON_CROPS:
+    suitable_months = ['June', 'July', 'August', 'September']
+elif crop_name in WINTER_CROPS:
+    suitable_months = ['October', 'November', 'December', 'January', 'February']
+else:
+    suitable_months = metadata['sowing_months']
+
+for month in suitable_months:
+    if month != sowing_month:
+        try:
+            q10_new, q50_new, q90_new = predict_yield(area_name, crop_name, soil_type, irrigation_method, month, soil_ph)
+            gain = q50_new - q50
+            if gain > 0:
+                _, risk_new = compute_confidence(q10_new, q50_new, q90_new, crop_name)
+                alternatives.append({
+                    'type': 'Sowing Month',
+                    'change': f'{sowing_month} → {month}',
+                    'yield': q50_new,
+                    'gain': gain,
+                    'gain_pct': (gain / q50) * 100,
+                    'risk': risk_new,
+                    'details': {'month': month}
+                })
+        except:
+            pass
+
+# 3. SOIL pH OPTIMIZATION (Priority #3)
+if soil_ph:
+    # Try optimal pH
+    optimal_ph = 6.5
+    if abs(soil_ph - optimal_ph) > 0.3:
+        try:
+            q10_new, q50_new, q90_new = predict_yield(area_name, crop_name, soil_type, irrigation_method, sowing_month, optimal_ph)
+            gain = q50_new - q50
+            if gain > 0:
+                _, risk_new = compute_confidence(q10_new, q50_new, q90_new, crop_name)
+                alternatives.append({
+                    'type': 'Soil pH',
+                    'change': f'{soil_ph:.1f} → {optimal_ph}',
+                    'yield': q50_new,
+                    'gain': gain,
+                    'gain_pct': (gain / q50) * 100,
+                    'risk': risk_new,
+                    'details': {'ph': optimal_ph}
+                })
+        except:
+            pass
+
+# 4. CROP CHANGE (Only if current crop is really unsuitable)
+# Only recommend if yield is very low AND climate doesn't match
+try:
+    climate = area_month_climate.loc[(area_name, sowing_month)]
+    rainfall = float(climate['rainfall_mm'])
+    
+    # Only suggest crop change if rainfall is very low for rice or very high for dry crops
+    should_suggest_crop_change = False
+    
+    if crop_name == 'Rice' and rainfall < 50:
+        should_suggest_crop_change = True
+        alternative_crops = ['Groundnut', 'Sunflower', 'Jowar']
+    elif crop_name in ['Groundnut', 'Sunflower'] and rainfall > 250:
+        should_suggest_crop_change = True
+        alternative_crops = ['Rice', 'Maize']
+    
+    if should_suggest_crop_change:
+        for alt_crop in alternative_crops[:1]:  # Only 1 crop suggestion
+            if alt_crop in metadata['crops']:
+                try:
+                    q10_new, q50_new, q90_new = predict_yield(area_name, alt_crop, soil_type, irrigation_method, sowing_month, soil_ph)
+                    gain = q50_new - q50
+                    if gain > q50 * 0.15:  # Only if >15% improvement
+                        _, risk_new = compute_confidence(q10_new, q50_new, q90_new, alt_crop)
+                        alternatives.append({
+                            'type': 'Crop',
+                            'change': f'{crop_name} → {alt_crop}',
+                            'yield': q50_new,
+                            'gain': gain,
+                            'gain_pct': (gain / q50) * 100,
+                            'risk': risk_new,
+                            'details': {'crop': alt_crop}
+                        })
+                except:
+                    pass
+except:
+    pass
+
+# ============================================================================
+# RANK AND SELECT TOP 3
+# ============================================================================
+
+# Sort by: highest gain, then lowest risk
+risk_priority = {'LOW': 0, 'MEDIUM': 1, 'HIGH': 2}
+alternatives.sort(key=lambda x: (-x['gain'], risk_priority.get(x['risk'], 2)))
+
+top_3 = alternatives[:3]
+
+# Display top 3
+for i, opt in enumerate(top_3, 1):
+    print(f"{i}. Change {opt['type'].lower()}: {opt['change']}")
+    print(f"   Expected yield: {opt['yield']:,.0f} kg/acre (+{opt['gain_pct']:.1f}%)")
+    print()
+
+# ============================================================================
+# BEST COMBINED OPTION
+# ============================================================================
+
+if top_3:
+    print("-" * 80)
+    print("BEST COMBINED OPTION:")
+    print("-" * 80)
+    
+    # For each category, find the HIGHEST YIELD option (not just first occurrence)
+    best_crop = crop_name
+    best_irrigation = irrigation_method
+    best_month = sowing_month
+    best_ph = soil_ph
+    
+    # Group alternatives by type and find best of each
+    irrigation_options = [opt for opt in alternatives if opt['type'] == 'Irrigation']
+    month_options = [opt for opt in alternatives if opt['type'] == 'Sowing Month']
+    ph_options = [opt for opt in alternatives if opt['type'] == 'Soil pH']
+    crop_options = [opt for opt in alternatives if opt['type'] == 'Crop']
+    
+    # Select HIGHEST YIELD from each category
+    if irrigation_options:
+        best_irrigation_opt = max(irrigation_options, key=lambda x: x['yield'])
+        best_irrigation = best_irrigation_opt['details']['irrigation']
+    
+    if month_options:
+        best_month_opt = max(month_options, key=lambda x: x['yield'])
+        best_month = best_month_opt['details']['month']
+    
+    if ph_options:
+        best_ph_opt = max(ph_options, key=lambda x: x['yield'])
+        best_ph = best_ph_opt['details']['ph']
+    
+    if crop_options:
+        best_crop_opt = max(crop_options, key=lambda x: x['yield'])
+        best_crop = best_crop_opt['details']['crop']
+    
+    # Predict combined
+    q10_best, q50_best, q90_best = predict_yield(area_name, best_crop, soil_type, best_irrigation, best_month, best_ph)
+    combined_gain = q50_best - q50
+    combined_pct = (combined_gain / q50) * 100
+    
+    print(f"  Crop: {best_crop}")
+    print(f"  Irrigation: {best_irrigation}")
+    print(f"  Sowing month: {best_month}")
+    if best_ph:
+        print(f"  Soil pH: {best_ph:.1f}")
+    print()
+    print(f"  Total expected yield: {q50_best:,.0f} kg/acre (+{combined_pct:.1f}%)")
+    print(f"  Total production for {area_acres} acres: {q50_best * area_acres:,.0f} kg")
+    
+else:
+    print("💡 Current setup is already near-optimal for your conditions.")
+
+print()
+print("=" * 80)
+print("✅ Prediction complete!")
+print("=" * 80)
+print()
